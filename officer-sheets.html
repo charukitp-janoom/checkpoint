@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0">
+<title>เช็คอิน — Smart Checkpoint</title>
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&family=Chakra+Petch:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#07060f;--surface:#0e0d1c;--card:#141226;
+  --border:#26234a;--border2:#3a375a;
+  --accent:#7c6dfa;--accent2:#fa6d9e;--teal:#6dfae0;
+  --success:#6dfaa0;--danger:#fa4d6d;--warn:#faad6d;
+  --text:#e8e6ff;--mid:#a09cbf;--dim:#6b6890;
+  --mono:'Chakra Petch',monospace;--sans:'Sarabun',sans-serif;
+}
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:100vh;display:flex;flex-direction:column;align-items:center;overflow-x:hidden;}
+
+/* ── SCREEN MANAGER ── */
+.screen{display:none;width:100%;max-width:430px;min-height:100vh;flex-direction:column;padding:20px 16px 40px;}
+.screen.active{display:flex;}
+
+/* ── HEADER ── */
+.hdr{display:flex;align-items:center;gap:12px;padding:8px 0 20px;}
+.hdr-logo{width:38px;height:38px;background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;}
+.hdr-title{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:1px;color:var(--accent);}
+.hdr-sub{font-size:11px;color:var(--dim);}
+
+/* ── STEP INDICATOR ── */
+.steps{display:flex;gap:0;margin-bottom:24px;}
+.step-item{flex:1;position:relative;}
+.step-item::after{content:'';position:absolute;top:12px;left:50%;right:-50%;height:2px;background:var(--border);}
+.step-item:last-child::after{display:none;}
+.step-item.done::after,.step-item.active::after{background:var(--accent);}
+.step-dot{width:24px;height:24px;border-radius:50%;border:2px solid var(--border);background:var(--surface);font-family:var(--mono);font-size:10px;display:flex;align-items:center;justify-content:center;position:relative;z-index:1;margin:0 auto;}
+.step-item.done .step-dot{background:var(--accent);border-color:var(--accent);color:#fff;}
+.step-item.active .step-dot{border-color:var(--accent);color:var(--accent);}
+.step-lbl{font-size:9px;color:var(--dim);text-align:center;margin-top:5px;font-family:var(--mono);letter-spacing:.5px;}
+.step-item.active .step-lbl{color:var(--accent);}
+
+/* ── CARDS ── */
+.card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px;margin-bottom:14px;position:relative;overflow:hidden;}
+.card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--accent),var(--accent2));}
+.card-title{font-family:var(--mono);font-size:10px;letter-spacing:1.5px;color:var(--dim);margin-bottom:14px;text-transform:uppercase;}
+
+/* ── SCANNER ── */
+.scan-box{background:var(--surface);border:2px dashed var(--border2);border-radius:12px;aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;margin-bottom:14px;position:relative;overflow:hidden;}
+.scan-box.scanning{border-color:var(--accent);border-style:solid;}
+#scanVideo{width:100%;height:100%;object-fit:cover;border-radius:10px;display:none;}
+.scan-overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;}
+.scan-frame{width:60%;aspect-ratio:1;border:2px solid rgba(124,109,250,.8);border-radius:8px;position:relative;}
+.scan-frame::before,.scan-frame::after,.sf-b::before,.sf-b::after{content:'';position:absolute;width:16px;height:16px;border-color:var(--accent);border-style:solid;}
+.scan-frame::before{top:-2px;left:-2px;border-width:3px 0 0 3px;border-radius:2px 0 0 0;}
+.scan-frame::after{top:-2px;right:-2px;border-width:3px 3px 0 0;border-radius:0 2px 0 0;}
+.sf-b::before{bottom:-2px;left:-2px;border-width:0 0 3px 3px;border-radius:0 0 0 2px;}
+.sf-b::after{bottom:-2px;right:-2px;border-width:0 3px 3px 0;border-radius:0 0 2px 0;}
+.scan-line{position:absolute;width:80%;height:2px;background:linear-gradient(90deg,transparent,var(--accent),transparent);animation:scanAnim 2s linear infinite;}
+@keyframes scanAnim{0%{top:20%}100%{top:80%}}
+.scan-icon{font-size:36px;opacity:.4;}
+.scan-hint{font-size:12px;color:var(--dim);text-align:center;}
+
+/* ── CP INFO ── */
+.cp-result{background:rgba(124,109,250,.08);border:1px solid rgba(124,109,250,.2);border-radius:10px;padding:14px;margin-bottom:12px;}
+.cp-name{font-size:18px;font-weight:700;margin-bottom:6px;}
+.cp-meta{display:flex;flex-direction:column;gap:4px;}
+.cp-row{display:flex;justify-content:space-between;font-size:12px;}
+.cp-key{color:var(--dim);font-family:var(--mono);font-size:10px;letter-spacing:.5px;}
+.cp-val{font-family:var(--mono);font-size:11px;color:var(--teal);}
+.verified-badge{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:8px;background:rgba(109,250,160,.08);border:1px solid rgba(109,250,160,.2);color:var(--success);font-family:var(--mono);font-size:11px;font-weight:700;margin-top:8px;}
+
+/* ── GPS ── */
+.gps-ring{width:100px;height:100px;border-radius:50%;border:3px solid var(--border);display:flex;align-items:center;justify-content:center;margin:16px auto;position:relative;}
+.gps-ring.searching{border-color:var(--accent);animation:spin 2s linear infinite;}
+.gps-ring.ok{border-color:var(--success);}
+.gps-ring.err{border-color:var(--danger);}
+@keyframes spin{to{transform:rotate(360deg)}}
+.gps-icon{font-size:28px;}
+.gps-dist{text-align:center;font-family:var(--mono);font-size:22px;font-weight:700;}
+.gps-status{text-align:center;font-size:13px;color:var(--dim);margin-top:4px;}
+.dist-bar{height:6px;background:var(--border);border-radius:3px;overflow:hidden;margin-top:12px;}
+.dist-fill{height:100%;background:var(--success);border-radius:3px;transition:width .5s ease;}
+
+/* ── CAMERA ── */
+.cam-wrap{position:relative;background:#000;border-radius:12px;overflow:hidden;aspect-ratio:4/3;margin-bottom:12px;}
+#camVideo{width:100%;height:100%;object-fit:cover;}
+#snapCanvas{display:none;}
+.cam-overlay{position:absolute;inset:0;pointer-events:none;}
+.watermark{position:absolute;bottom:10px;left:10px;right:10px;background:rgba(0,0,0,.6);padding:6px 10px;border-radius:6px;font-family:var(--mono);font-size:9px;color:rgba(255,255,255,.85);line-height:1.6;}
+.shutter{width:64px;height:64px;border-radius:50%;background:#fff;border:4px solid rgba(255,255,255,.4);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:24px;transition:.15s;margin:0 auto;}
+.shutter:hover{transform:scale(1.06);}
+.shutter:active{transform:scale(.95);}
+
+/* ── BUTTONS ── */
+.btn{width:100%;padding:14px;border-radius:10px;border:none;font-family:var(--sans);font-size:15px;font-weight:700;cursor:pointer;transition:.2s;display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:10px;}
+.btn.primary{background:linear-gradient(135deg,var(--accent),#5a4de0);color:#fff;box-shadow:0 4px 18px rgba(124,109,250,.3);}
+.btn.primary:hover{transform:translateY(-2px);box-shadow:0 8px 28px rgba(124,109,250,.4);}
+.btn.primary:active{transform:translateY(0);}
+.btn.sec{background:var(--surface);border:1px solid var(--border2);color:var(--mid);}
+.btn.sec:hover{border-color:var(--accent);color:var(--accent);}
+.btn.success{background:linear-gradient(135deg,var(--success),#3ab070);color:#111;}
+.btn.danger{background:var(--surface);border:1px solid var(--danger);color:var(--danger);}
+.btn:disabled{opacity:.4;pointer-events:none;}
+
+/* ── RESULT ── */
+.result-icon{font-size:64px;text-align:center;margin:16px 0;}
+.result-msg{font-size:20px;font-weight:700;text-align:center;margin-bottom:8px;}
+.result-sub{font-size:14px;color:var(--mid);text-align:center;}
+
+/* ── TOAST ── */
+#toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(16px);background:var(--card);border:1px solid var(--border2);padding:10px 20px;border-radius:10px;font-size:13px;opacity:0;transition:.3s;z-index:999;white-space:nowrap;box-shadow:0 6px 24px rgba(0,0,0,.5);}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+#toast.err{border-color:var(--danger);}
+</style>
+</head>
+<body>
+
+<!-- SCREEN 1: SCAN -->
+<div class="screen active" id="s1">
+  <div class="hdr">
+    <div class="hdr-logo">🛡️</div>
+    <div><div class="hdr-title">SMART CHECKPOINT</div><div class="hdr-sub" id="officerName">กำลังโหลด...</div></div>
+  </div>
+  <div class="steps">
+    <div class="step-item active"><div class="step-dot">1</div><div class="step-lbl">สแกน QR</div></div>
+    <div class="step-item"><div class="step-dot">2</div><div class="step-lbl">ตรวจ GPS</div></div>
+    <div class="step-item"><div class="step-dot">3</div><div class="step-lbl">ถ่ายภาพ</div></div>
+    <div class="step-item"><div class="step-dot">4</div><div class="step-lbl">สำเร็จ</div></div>
+  </div>
+  <div class="card">
+    <div class="card-title">สแกน QR Code จุดตรวจ</div>
+    <div class="scan-box" id="scanBox">
+      <video id="scanVideo" autoplay playsinline></video>
+      <div class="scan-overlay" id="scanOverlay">
+        <div class="scan-frame"><div class="sf-b"></div><div class="scan-line"></div></div>
+      </div>
+      <span class="scan-icon" id="scanIcon">🔲</span>
+      <span class="scan-hint" id="scanHint">กดปุ่มด้านล่างเพื่อเปิดกล้อง</span>
+    </div>
+    <div id="cpResult" style="display:none;"></div>
+    <button class="btn primary" id="btnStartScan" onclick="startScan()">📷 เปิดกล้องสแกน QR</button>
+    <button class="btn sec" id="btnNextToGps" onclick="goToGps()" style="display:none;">🔍 ตรวจสอบตำแหน่ง GPS →</button>
+    <button class="btn sec" onclick="demoScan()">⚡ Demo (ทดสอบ)</button>
+  </div>
+</div>
+
+<!-- SCREEN 2: GPS -->
+<div class="screen" id="s2">
+  <div class="hdr">
+    <div class="hdr-logo">📍</div>
+    <div><div class="hdr-title">ตรวจสอบตำแหน่ง</div><div class="hdr-sub" id="s2Sub">กำลังระบุตำแหน่ง...</div></div>
+  </div>
+  <div class="steps">
+    <div class="step-item done"><div class="step-dot">✓</div><div class="step-lbl">สแกน QR</div></div>
+    <div class="step-item active"><div class="step-dot">2</div><div class="step-lbl">ตรวจ GPS</div></div>
+    <div class="step-item"><div class="step-dot">3</div><div class="step-lbl">ถ่ายภาพ</div></div>
+    <div class="step-item"><div class="step-dot">4</div><div class="step-lbl">สำเร็จ</div></div>
+  </div>
+  <div class="card">
+    <div class="card-title" id="cpNameOnGps">—</div>
+    <div class="gps-ring searching" id="gpsRing"><span class="gps-icon">📡</span></div>
+    <div class="gps-dist" id="gpsDist">กำลังระบุ...</div>
+    <div class="gps-status" id="gpsStatus">กำลังรับสัญญาณ GPS</div>
+    <div class="dist-bar"><div class="dist-fill" id="distFill" style="width:0%;background:var(--warn);"></div></div>
+    <div style="display:flex;justify-content:space-between;font-family:var(--mono);font-size:9px;color:var(--dim);margin-top:6px;">
+      <span>0 ม.</span><span id="radiusLabel">50 ม.</span>
+    </div>
+  </div>
+  <button class="btn primary" id="btnToCamera" onclick="goToCamera()" disabled>📷 เปิดกล้องถ่ายภาพ →</button>
+  <button class="btn sec" onclick="goBack('s1')">← สแกนใหม่</button>
+</div>
+
+<!-- SCREEN 3: CAMERA -->
+<div class="screen" id="s3">
+  <div class="hdr">
+    <div class="hdr-logo">📸</div>
+    <div><div class="hdr-title">ถ่ายภาพยืนยัน</div><div class="hdr-sub" id="s3Sub">—</div></div>
+  </div>
+  <div class="steps">
+    <div class="step-item done"><div class="step-dot">✓</div><div class="step-lbl">สแกน QR</div></div>
+    <div class="step-item done"><div class="step-dot">✓</div><div class="step-lbl">ตรวจ GPS</div></div>
+    <div class="step-item active"><div class="step-dot">3</div><div class="step-lbl">ถ่ายภาพ</div></div>
+    <div class="step-item"><div class="step-dot">4</div><div class="step-lbl">สำเร็จ</div></div>
+  </div>
+  <div class="cam-wrap">
+    <video id="camVideo" autoplay playsinline muted></video>
+    <canvas id="snapCanvas"></canvas>
+    <div class="cam-overlay"><div class="watermark" id="wm"></div></div>
+  </div>
+  <div style="display:flex;gap:10px;margin-bottom:10px;">
+    <button class="btn sec" id="btnRetake" onclick="retakePhoto()" style="display:none;">🗑️ ถ่ายใหม่</button>
+    <button class="shutter" id="shutterBtn" onclick="takePhoto()">📷</button>
+  </div>
+  <button class="btn success" id="btnSubmit" onclick="submitCheckin()" disabled>✅ ยืนยัน → บันทึก Google Sheets</button>
+  <button class="btn sec" onclick="goBack('s2')">← ย้อนกลับ</button>
+</div>
+
+<!-- SCREEN 4: SUCCESS -->
+<div class="screen" id="s4">
+  <div class="hdr">
+    <div class="hdr-logo">✅</div>
+    <div><div class="hdr-title">เช็คอินสำเร็จ</div><div class="hdr-sub" id="s4Time">—</div></div>
+  </div>
+  <div class="card">
+    <div class="result-icon">🎉</div>
+    <div class="result-msg">เช็คอินสำเร็จแล้ว!</div>
+    <div class="result-sub" id="s4Detail">—</div>
+    <div style="height:12px;"></div>
+    <div class="cp-result">
+      <div class="cp-meta" id="s4Info"></div>
+    </div>
+  </div>
+  <button class="btn primary" onclick="resetAll()">🔄 เช็คอินจุดต่อไป</button>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ════════════════════════════════════════════
+// CONFIG — อ่านจาก localStorage หรือ URL params
+// ════════════════════════════════════════════
+(function parseUrlParams() {
+  const p = new URLSearchParams(window.location.search);
+  if (p.get('api'))    { localStorage.setItem('sc_api_url', p.get('api')); }
+  if (p.get('secret')) { localStorage.setItem('sc_secret',  p.get('secret')); }
+  if (p.get('liff'))   { localStorage.setItem('sc_liff_id', p.get('liff')); }
+})();
+
+const API_URL  = localStorage.getItem('sc_api_url') || '';
+const SECRET   = localStorage.getItem('sc_secret')  || '';
+const LIFF_ID  = localStorage.getItem('sc_liff_id') || '';
+
+let officerId   = 'demo-officer';
+let officerNameStr = 'เจ้าหน้าที่';
+let cpData      = null;    // ข้อมูลจุดตรวจจาก QR
+let myLat       = null;
+let myLng       = null;
+let myDist      = null;
+let photoDataUrl = null;
+let scanStream  = null;
+let camStream   = null;
+let gpsWatch    = null;
+
+// ════════════════════════════════════════════
+// API
+// ════════════════════════════════════════════
+async function callApi(action, params = {}) {
+  if (!API_URL) return { ok: false, _demo: true, error: 'No API URL (Demo mode)' };
+  const p = new URLSearchParams({ action, ...params });
+  const r = await fetch(API_URL + '?' + p.toString());
+  return r.json();
+}
+
+// ════════════════════════════════════════════
+// INIT — LIFF
+// ════════════════════════════════════════════
+async function initLiff() {
+  if (!LIFF_ID) {
+    document.getElementById('officerName').textContent = 'Demo Mode';
+    if (!API_URL) showToast('⚠️ Demo Mode — ไม่มี API URL', 'err');
+    return;
+  }
+  try {
+    await liff.init({ liffId: LIFF_ID });
+    if (!liff.isLoggedIn()) { liff.login(); return; }
+    const profile = await liff.getProfile();
+    officerId      = profile.userId;
+    officerNameStr = profile.displayName;
+    document.getElementById('officerName').textContent = officerNameStr;
+  } catch(e) {
+    document.getElementById('officerName').textContent = 'ไม่ได้เชื่อมต่อ LINE';
+  }
+}
+
+// ════════════════════════════════════════════
+// SCREEN 1: SCAN QR
+// ════════════════════════════════════════════
+async function startScan() {
+  const box = document.getElementById('scanBox');
+  const video = document.getElementById('scanVideo');
+  const icon = document.getElementById('scanIcon');
+  const hint = document.getElementById('scanHint');
+
+  try {
+    scanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    video.srcObject = scanStream;
+    video.style.display = 'block';
+    icon.style.display  = 'none';
+    hint.style.display  = 'none';
+    box.classList.add('scanning');
+    document.getElementById('btnStartScan').disabled = true;
+
+    const tick = setInterval(async () => {
+      if (!scanStream) { clearInterval(tick); return; }
+      if ('BarcodeDetector' in window) {
+        const bd = new BarcodeDetector({ formats: ['qr_code'] });
+        try {
+          const codes = await bd.detect(video);
+          if (codes.length > 0) { clearInterval(tick); onQrDetected(codes[0].rawValue); }
+        } catch(e) {}
+      }
+    }, 500);
+
+    showToast('กำลังสแกน QR...');
+  } catch(e) {
+    showToast('❌ ไม่สามารถเปิดกล้องได้: ' + e.message, 'err');
+    document.getElementById('btnStartScan').disabled = false;
+  }
+}
+
+function onQrDetected(raw) {
+  stopScanStream();
+  try {
+    let payload;
+    if (raw.startsWith('data:checkpoint,')) {
+      payload = JSON.parse(atob(raw.replace('data:checkpoint,', '')));
+    } else {
+      const url = new URL(raw);
+      const cp = url.searchParams.get('cp');
+      if (!cp) throw new Error('ไม่พบ QR ที่ถูกต้อง');
+      payload = JSON.parse(atob(cp));
+    }
+
+    // ตรวจหมดอายุ (5 นาที)
+    const expire = (payload.expireMinutes || 5) * 60 * 1000;
+    if (Date.now() - payload.ts > expire) {
+      showToast('❌ QR หมดอายุแล้ว — ขอใหม่จาก Admin', 'err');
+      document.getElementById('btnStartScan').disabled = false;
+      return;
+    }
+
+    cpData = payload;
+    renderCpResult(payload);
+    showToast('✅ สแกน ' + payload.name + ' สำเร็จ!');
+  } catch(e) {
+    showToast('❌ QR ไม่ถูกต้อง: ' + e.message, 'err');
+    document.getElementById('btnStartScan').disabled = false;
+  }
+}
+
+function renderCpResult(p) {
+  const el = document.getElementById('cpResult');
+  el.style.display = 'block';
+  el.innerHTML = `<div class="cp-result">
+    <div class="cp-name">📍 ${p.name}</div>
+    <div class="cp-meta">
+      <div class="cp-row"><span class="cp-key">CP ID</span><span class="cp-val">${p.cpId}</span></div>
+      <div class="cp-row"><span class="cp-key">พิกัด</span><span class="cp-val">${Number(p.lat).toFixed(5)}, ${Number(p.lng).toFixed(5)}</span></div>
+      <div class="cp-row"><span class="cp-key">รัศมี</span><span class="cp-val">${p.radius} ม.</span></div>
+      <div class="cp-row"><span class="cp-key">เวลา</span><span class="cp-val">${p.timeFrom}–${p.timeTo}</span></div>
+    </div>
+    <div class="verified-badge">✅ QR ตรวจสอบแล้ว</div>
+  </div>`;
+  document.getElementById('btnStartScan').style.display = 'none';
+  document.getElementById('btnNextToGps').style.display = 'flex';
+}
+
+function stopScanStream() {
+  if (scanStream) { scanStream.getTracks().forEach(t => t.stop()); scanStream = null; }
+  const video = document.getElementById('scanVideo');
+  video.style.display = 'none';
+  document.getElementById('scanIcon').style.display = 'block';
+  document.getElementById('scanHint').style.display = 'block';
+  document.getElementById('scanBox').classList.remove('scanning');
+}
+
+function demoScan() {
+  cpData = { cpId:'CP-DEMO', name:'จุดตรวจ Demo', lat:13.756, lng:100.501, radius:100, timeFrom:'00:00', timeTo:'23:59', ts:Date.now() };
+  renderCpResult(cpData);
+}
+
+// ════════════════════════════════════════════
+// SCREEN 2: GPS
+// ════════════════════════════════════════════
+function goToGps() {
+  if (!cpData) { showToast('❌ กรุณาสแกน QR ก่อน', 'err'); return; }
+  showScreen('s2');
+  document.getElementById('cpNameOnGps').textContent = '📍 ' + cpData.name;
+  document.getElementById('radiusLabel').textContent = cpData.radius + ' ม.';
+  startGps();
+}
+
+function startGps() {
+  if (!navigator.geolocation) { showToast('❌ GPS ไม่รองรับ', 'err'); return; }
+  gpsWatch = navigator.geolocation.watchPosition(pos => {
+    myLat = pos.coords.latitude;
+    myLng = pos.coords.longitude;
+    myDist = haversine(myLat, myLng, Number(cpData.lat), Number(cpData.lng));
+    updateGpsUI(myDist);
+  }, err => {
+    showToast('❌ GPS: ' + err.message, 'err');
+  }, { enableHighAccuracy: true, maximumAge: 5000 });
+}
+
+function updateGpsUI(dist) {
+  const ring   = document.getElementById('gpsRing');
+  const distEl = document.getElementById('gpsDist');
+  const status = document.getElementById('gpsStatus');
+  const fill   = document.getElementById('distFill');
+  const btn    = document.getElementById('btnToCamera');
+  const radius = Number(cpData.radius);
+
+  const pct = Math.min(100, (dist / radius) * 100);
+  const inside = dist <= radius;
+
+  distEl.textContent = Math.round(dist) + ' ม.';
+  fill.style.width   = pct + '%';
+  fill.style.background = inside ? 'var(--success)' : 'var(--warn)';
+
+  if (inside) {
+    ring.className   = 'gps-ring ok';
+    status.textContent = '✅ อยู่ในระยะแล้ว! (' + Math.round(dist) + '/' + radius + ' ม.)';
+    status.style.color = 'var(--success)';
+    btn.disabled = false;
+  } else {
+    ring.className   = 'gps-ring searching';
+    status.textContent = '⏳ อยู่ห่าง ' + Math.round(dist) + ' ม. (ต้องอยู่ภายใน ' + radius + ' ม.)';
+    status.style.color = 'var(--warn)';
+    btn.disabled = true;
+  }
+  document.getElementById('s2Sub').textContent = 'ห่าง ' + Math.round(dist) + ' ม.';
+}
+
+function stopGps() {
+  if (gpsWatch !== null) { navigator.geolocation.clearWatch(gpsWatch); gpsWatch = null; }
+}
+
+function haversine(lat1, lon1, lat2, lon2) {
+  const R = 6371000, toRad = x => x * Math.PI / 180;
+  const dLat = toRad(lat2-lat1), dLon = toRad(lon2-lon1);
+  const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+// ════════════════════════════════════════════
+// SCREEN 3: CAMERA
+// ════════════════════════════════════════════
+async function goToCamera() {
+  stopGps();
+  showScreen('s3');
+  document.getElementById('s3Sub').textContent = cpData.name + ' · ' + Math.round(myDist||0) + ' ม.';
+  updateWatermark();
+  await startCamera();
+}
+
+async function startCamera() {
+  try {
+    camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width:{ ideal:1280 }, height:{ ideal:960 } } });
+    document.getElementById('camVideo').srcObject = camStream;
+  } catch(e) { showToast('❌ ไม่สามารถเปิดกล้อง: ' + e.message, 'err'); }
+}
+
+function updateWatermark() {
+  const wm = document.getElementById('wm');
+  const now = new Date();
+  wm.innerHTML = `🛡️ ${cpData?.name||'—'}<br>📍 ${myLat?myLat.toFixed(5):'—'}, ${myLng?myLng.toFixed(5):'—'}  |  ↔ ${Math.round(myDist||0)} ม.<br>🕐 ${now.toLocaleString('th-TH')}  |  ${officerNameStr}`;
+}
+
+function takePhoto() {
+  const video = document.getElementById('camVideo');
+  const canvas = document.getElementById('snapCanvas');
+  canvas.width  = video.videoWidth  || 640;
+  canvas.height = video.videoHeight || 480;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(video, 0, 0);
+
+  // watermark overlay
+  const now = new Date();
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fillRect(0, canvas.height - 52, canvas.width, 52);
+  ctx.fillStyle = '#fff'; ctx.font = `${Math.round(canvas.width/40)}px monospace`;
+  const fs = Math.round(canvas.width/40);
+  ctx.fillText(`🛡️ ${cpData?.name||''}`, 10, canvas.height - 32);
+  ctx.fillText(`${now.toLocaleString('th-TH')}  |  ${Math.round(myDist||0)} ม.  |  ${officerNameStr}`, 10, canvas.height - 10);
+
+  photoDataUrl = canvas.toDataURL('image/jpeg', 0.85);
+
+  // แสดงรูปถ่าย
+  const camWrap = document.querySelector('.cam-wrap');
+  const showImg = document.createElement('img');
+  showImg.src = photoDataUrl;
+  showImg.style.cssText = 'width:100%;height:100%;object-fit:cover;position:absolute;inset:0;border-radius:12px;';
+  showImg.id = 'previewImg';
+  camWrap.appendChild(showImg);
+
+  document.getElementById('shutterBtn').style.display = 'none';
+  document.getElementById('btnRetake').style.display  = 'flex';
+  document.getElementById('btnSubmit').disabled = false;
+  showToast('📸 ถ่ายภาพแล้ว — กด ✅ ยืนยัน');
+}
+
+function retakePhoto() {
+  photoDataUrl = null;
+  const prev = document.getElementById('previewImg');
+  if (prev) prev.remove();
+  document.getElementById('shutterBtn').style.display = 'flex';
+  document.getElementById('btnRetake').style.display  = 'none';
+  document.getElementById('btnSubmit').disabled = true;
+  updateWatermark();
+}
+
+function stopCamera() {
+  if (camStream) { camStream.getTracks().forEach(t => t.stop()); camStream = null; }
+}
+
+// ════════════════════════════════════════════
+// SUBMIT CHECK-IN
+// ════════════════════════════════════════════
+async function submitCheckin() {
+  if (!cpData || !photoDataUrl) { showToast('❌ ข้อมูลไม่ครบ','err'); return; }
+  document.getElementById('btnSubmit').disabled = true;
+  document.getElementById('btnSubmit').textContent = '⏳ กำลังบันทึก...';
+
+  try {
+    const params = {
+      checkpointId: cpData.cpId,
+      officerId,
+      officerName: officerNameStr,
+      lat: myLat || cpData.lat,
+      lng: myLng || cpData.lng,
+      photoUrl: photoDataUrl.substring(0, 200) + '...',  // truncate for URL limit
+      note: ''
+    };
+
+    const res = await callApi('saveCheckin', params);
+
+    if (res._demo) {
+      // demo mode
+      showScreen('s4');
+      renderSuccess({ distance: Math.round(myDist||0), status:'demo', id:'DEMO-'+Date.now() });
+      return;
+    }
+
+    if (!res.ok) throw new Error(res.error || 'บันทึกไม่สำเร็จ');
+
+    stopCamera();
+    showScreen('s4');
+    renderSuccess(res);
+  } catch(e) {
+    document.getElementById('btnSubmit').disabled = false;
+    document.getElementById('btnSubmit').textContent = '✅ ยืนยัน → บันทึก Google Sheets';
+    showToast('❌ ' + e.message, 'err');
+  }
+}
+
+function renderSuccess(res) {
+  const now = new Date();
+  document.getElementById('s4Time').textContent = now.toLocaleString('th-TH');
+  document.getElementById('s4Detail').textContent =
+    'บันทึกเรียบร้อย · ระยะห่าง ' + res.distance + ' ม. · ' + (res.status === 'verified' ? '✅ ยืนยันแล้ว' : '⚠️ นอกพื้นที่');
+  document.getElementById('s4Info').innerHTML = `
+    <div class="cp-row"><span class="cp-key">จุดตรวจ</span><span class="cp-val">${cpData?.name||'—'}</span></div>
+    <div class="cp-row"><span class="cp-key">เจ้าหน้าที่</span><span class="cp-val">${officerNameStr}</span></div>
+    <div class="cp-row"><span class="cp-key">ระยะห่าง</span><span class="cp-val">${res.distance} ม.</span></div>
+    <div class="cp-row"><span class="cp-key">รหัส</span><span class="cp-val">${res.id||'—'}</span></div>`;
+}
+
+// ════════════════════════════════════════════
+// NAVIGATION
+// ════════════════════════════════════════════
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function goBack(screen) {
+  stopGps();
+  if (screen === 's2') stopCamera();
+  showScreen(screen);
+}
+
+function resetAll() {
+  stopGps(); stopScanStream(); stopCamera();
+  cpData = myLat = myLng = myDist = photoDataUrl = null;
+  document.getElementById('cpResult').style.display = 'none';
+  document.getElementById('btnStartScan').style.display = 'flex';
+  document.getElementById('btnStartScan').disabled = false;
+  document.getElementById('btnNextToGps').style.display = 'none';
+  document.getElementById('btnSubmit').disabled = true;
+  document.getElementById('btnSubmit').textContent = '✅ ยืนยัน → บันทึก Google Sheets';
+  const prev = document.getElementById('previewImg');
+  if (prev) prev.remove();
+  document.getElementById('shutterBtn').style.display = 'flex';
+  document.getElementById('btnRetake').style.display = 'none';
+  showScreen('s1');
+}
+
+// ════════════════════════════════════════════
+// TOAST
+// ════════════════════════════════════════════
+function showToast(msg, type = '') {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.className = 'show ' + type;
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => { t.className = ''; }, 2800);
+}
+
+// ════════════════════════════════════════════
+// START
+// ════════════════════════════════════════════
+window.addEventListener('DOMContentLoaded', () => {
+  initLiff();
+  // อัปเดต watermark ทุก 10 วิ
+  setInterval(updateWatermark, 10000);
+});
+</script>
+</body>
+</html>
